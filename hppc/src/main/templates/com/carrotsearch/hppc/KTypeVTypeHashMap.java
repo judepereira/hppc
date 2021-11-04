@@ -18,16 +18,35 @@ import static com.carrotsearch.hppc.HashContainers.*;
  * A hash map of <code>KType</code> to <code>VType</code>, implemented using open
  * addressing with linear probing for collision resolution.
  * <p>
- * Important: In order to guarantee thread safety and a lock free iteration, the following
- * changes and assumptions have been made (the below applies when {@link #concurrent} is true):
+ * Important: In order to guarantee thread safety and a lock free iteration,
+ * the following needs to be considered:
  * <ol>
- *   <li>Iterations see the most recent value, and not always the latest. It's implemented as a snapshot iterator,
- *   although some updates during the iteration might be visible.</li>
- *   <li>Removals *do not* actually remove a key from the map if there are collisions.
- *   The value is set to a sentinel, and is therefore treated as a deleted entry.
- *   This is to ensure that during an iteration, entries are not shifted.
- *   This has GC implications (the removed key is not garbage collected).</li>
- *   <li>During a rehashing event, the removed keys will be cleaned up</li>
+ *   <li>Do not invoke any form of key removal, such as {@link #remove(Object)},
+ *   {@link #removeAll(KTypeContainer)}, etc. Doing so, might invoke
+ *   {@link #shiftConflictingKeys(int)}, which will result in an inconsistent
+ *   iteration (if ongoing). One trick is to put in a sentinel value,
+ *   and handle that in your application code.</li>
+ *   <li>If an add operation results in an rehash operation, any ongoing
+ *   iterations will reflect the entries just before the rehashing operation started
+ *   (snapshot iterator).</li>
+ * </ol>
+ * <p>
+ * How thread safety is implemented:
+ * <ol>
+ *   <li>Modifications take a write lock from {@link #lock}</li>
+ *   <li>Retrievals take a read lock from {@link #lock}</li>
+ *   <li>When an iteration is requested, references to the following are captured
+ *   using a write lock (to prevent rehashing to occur at this exact moment):
+ *   <ol>
+ *     <li>{@link #keys}</li>
+ *     <li>{@link #values}</li>
+ *     <li>{@link #mask}</li>
+ *   </ol>
+ *   See {@link StateSnapshot} for more details. After a snapshot is captured,
+ *   the iteration continues lock free.
+ *   </li>
+ *   <li>During a rehashing event, all access to the map is blocked,
+ *   including requests for new iterations</li>
  * </ol>
  *
  * @see <a href="{@docRoot}/overview-summary.html#interfaces">HPPC interfaces diagram</a>
@@ -1486,8 +1505,8 @@ public class KTypeVTypeHashMap<KType, VType>
    * If {@link #concurrent} is set to true, invoke this from a write locked context.
    */
   protected void shiftConflictingKeys(int gapSlot) {
-    final KType[] keys = Intrinsics.<KType[]> cast(this.keys);
-    final VType[] values = Intrinsics.<VType[]> cast(this.values);
+    final KType[] keys = Intrinsics.<KType[]>cast(this.keys);
+    final VType[] values = Intrinsics.<VType[]>cast(this.values);
     final int mask = this.mask;
 
     // Perform shifts of conflicting keys to fill in the gap.
@@ -1495,7 +1514,7 @@ public class KTypeVTypeHashMap<KType, VType>
     while (true) {
       final int slot = (gapSlot + (++distance)) & mask;
       final KType existing = keys[slot];
-      if (Intrinsics.<KType> isEmpty(existing)) {
+      if (Intrinsics.<KType>isEmpty(existing)) {
         break;
       }
 
