@@ -174,6 +174,10 @@ public class KTypeVTypeHashMap<KType, VType>
     this(DEFAULT_EXPECTED_ELEMENTS, DEFAULT_LOAD_FACTOR, concurrent);
   }
 
+  public boolean isConcurrent() {
+    return concurrent;
+  }
+
   /**
    * Create a hash map from all key-value pairs of another container.
    */
