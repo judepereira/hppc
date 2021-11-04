@@ -13,6 +13,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import static com.carrotsearch.hppc.Containers.DEFAULT_EXPECTED_ELEMENTS;
 import static com.carrotsearch.hppc.HashContainers.*;
+import static com.carrotsearch.hppc.Containers.*;
 
 /**
  * A hash map of <code>KType</code> to <code>VType</code>, implemented using open
