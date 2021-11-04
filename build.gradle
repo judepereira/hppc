@@ -35,5 +35,5 @@ allprojects {
   }
 
   version = rootProject.version
-  group   = "com.carrotsearch"
+  group   = "com.judepereira"
 }
