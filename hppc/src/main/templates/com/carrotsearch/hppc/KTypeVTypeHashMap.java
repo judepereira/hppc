@@ -1,12 +1,9 @@
 /*! #set($TemplateOptions.ignored = ($TemplateOptions.isKTypeAnyOf("DOUBLE", "FLOAT", "BYTE"))) !*/
 package com.carrotsearch.hppc;
 
-import com.carrotsearch.hppc.cursors.KTypeCursor;
-import com.carrotsearch.hppc.cursors.KTypeVTypeCursor;
-import com.carrotsearch.hppc.predicates.KTypePredicate;
-import com.carrotsearch.hppc.predicates.KTypeVTypePredicate;
-import com.carrotsearch.hppc.procedures.KTypeProcedure;
-import com.carrotsearch.hppc.procedures.KTypeVTypeProcedure;
+import com.carrotsearch.hppc.cursors.*;
+import com.carrotsearch.hppc.predicates.*;
+import com.carrotsearch.hppc.procedures.*;
 
 import java.util.Arrays;
 import java.util.Iterator;
@@ -20,6 +17,18 @@ import static com.carrotsearch.hppc.HashContainers.*;
 /**
  * A hash map of <code>KType</code> to <code>VType</code>, implemented using open
  * addressing with linear probing for collision resolution.
+ * <p>
+ * Important: In order to guarantee thread safety and a lock free iteration, the following
+ * changes and assumptions have been made (the below applies when {@link #concurrent} is true):
+ * <ol>
+ *   <li>Iterations see the most recent value, and not always the latest. It's implemented as a snapshot iterator,
+ *   although some updates during the iteration might be visible.</li>
+ *   <li>Removals *do not* actually remove a key from the map if there are collisions.
+ *   The value is set to a sentinel, and is therefore treated as a deleted entry.
+ *   This is to ensure that during an iteration, entries are not shifted.
+ *   This has GC implications (the removed key is not garbage collected).</li>
+ *   <li>During a rehashing event, the removed keys will be cleaned up</li>
+ * </ol>
  *
  * @see <a href="{@docRoot}/overview-summary.html#interfaces">HPPC interfaces diagram</a>
  */
@@ -140,6 +149,10 @@ public class KTypeVTypeHashMap<KType, VType>
     this.concurrent = concurrent;
     iterationSeed = HashContainers.nextIterationSeed();
     ensureCapacity(expectedElements);
+  }
+
+  public KTypeVTypeHashMap(boolean concurrent) {
+    this(DEFAULT_EXPECTED_ELEMENTS, DEFAULT_LOAD_FACTOR, concurrent);
   }
 
   /**
@@ -610,7 +623,9 @@ public class KTypeVTypeHashMap<KType, VType>
 
       return index >= 0;
     } finally {
-      lock.readLock().unlock();
+      if (concurrent) {
+        lock.readLock().unlock();
+      }
     }
   }
 
@@ -950,10 +965,6 @@ public class KTypeVTypeHashMap<KType, VType>
     public EntryIterator() {
       cursor = new KTypeVTypeCursor<KType, VType>();
       state = new StateSnapshot();
-
-      if (concurrent) {
-        lock.readLock().unlock();
-      }
 
       increment = iterationIncrement(state.seed);
       slot = state.seed & state.mask;
